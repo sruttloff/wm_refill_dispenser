@@ -10,20 +10,21 @@
 #include <Arduino.h>
 extern HardwareSerial Serial;
 
-int pump1 = 3; // the PWM pin the right pump is attached to
-int pump2 = 4; // the PWM pin the left pump is attached to
-int pump1Min = 45; //45 ist der kleinste
-int pump1Max = 235;
-int pump2Min = 45;
-int pump2Max = 255;
+const int pump1 = 3; // the PWM pin the right pump is attached to
+const int pump2 = 4; // the PWM pin the left pump is attached to
+const int pump1Min = 45; //45 ist der kleinste
+const int pump1Max = 235;
+const int pump2Min = 45;
+const int pump2Max = 255;
 int pump1Current = 0, pump2Current = 0;
-int t1 = 30; // time in secs. to stay at level min
-int t2 = 30; // time in secs. to stay at max
-int t3 = 15; // time in secs. to go from min to max
-int t4 = 15; // time in secs. to go from max to min
+const int t1 = 30; // time in secs. to stay at level min
+const int t2 = 30; // time in secs. to stay at max
+const int t3 = 15; // time in secs. to go from min to max
+const int t4 = 15; // time in secs. to go from max to min
 
 /*
  * timer 1 = for wavemaker timing
+ * timer 2 = fill pump RO water
  * timer 5 = food timer
  */
 const int timerElements = 5; // qty of timer's to init
@@ -34,13 +35,16 @@ float myTimer(int timerNo = 0, long time = 0);
 void setPump1Speed(float rate);
 void setPump2Speed(float rate);
 void pumpMaster();
+void buzzHigh();
 int foodBreak = 0;
 long foodTime = 600; // food time in secs.
-int foodSwitch = 22;
+const int foodSwitch = 22; // food switch pin
 int tmpSwitch = 0;
 float tmpFood = 0;
+const int buzzer = 30;//der Pins des angesteckten Summers
 
-void setup() {
+void setup() {    
+    rtcSetup();
     pinMode(pump1, pump1Current);
     pinMode(pump2, pump2Current);
     Serial.begin(9600);
@@ -53,6 +57,8 @@ void setup() {
     digitalWrite(foodSwitch, HIGH);
     setPump1Speed(50.0);
     delay(500);
+    distanceRoSetup();
+    pinMode(buzzer,OUTPUT);// initialsiert den buzzer als Output
 }
 
 void foodSwitchAction() {
@@ -100,7 +106,9 @@ void loop() {
     if (!foodBreak)
         pumpMaster();
     foodSwitchAction();
-    test();
+    distanceRo();
+    //testTime();
+    //test();   
 }
 void setPump1Speed(float rate) {
     // rate is percent
@@ -141,7 +149,7 @@ void pumpMaster() {
     // go to min
     if (step == "t4") {
         if (myTimer(1) == 0.0) {
-            Serial.println("Decrease to min");
+            Serial.println("Power Head: Decrease to min");
             myTimer(1, t4 * 1000);
         }
         // set pump speed            
@@ -151,14 +159,14 @@ void pumpMaster() {
         if (tmp >= 100.00) {
             setPump1Speed(0.00);
             step = "t1";
-            Serial.println("Decrease to min finished");
+            Serial.println("Power Head: Decrease to min finished");
             myTimer(1, -1); // reset Timer
         }
     }
     // go to max
     if (step == "t3") {
         if (myTimer(1) == 0.0) {
-            Serial.println("Grow to max");
+            Serial.println("Power Head: Grow to max");
             myTimer(1, t3 * 1000);
         }
         // set pump speed
@@ -168,7 +176,7 @@ void pumpMaster() {
         if (myTimer(1) >= 100.00) {
             setPump1Speed(100.00);
             step = "t2";
-            Serial.println("Grow to max finished");
+            Serial.println("Power Head: Grow to max finished");
             myTimer(1, -1); // reset Timer
         }
     }
@@ -178,7 +186,7 @@ void pumpMaster() {
         if (myTimer(1) == 0.0) {
             Serial.println("");
             Serial.println("");
-            Serial.println("Stay at min");
+            Serial.println("Power Head: Stay at min");
             myTimer(1, t1 * 1000);
             setPump1Speed(0.00);
         }
@@ -191,7 +199,7 @@ void pumpMaster() {
     // keep at max
     if (step == "t2") {
         if (myTimer(1) == 0.0) {
-            Serial.println("Stay at max");
+            Serial.println("Power Head: Stay at max");
             myTimer(1, t2 * 1000);
             setPump1Speed(100.00);
         }
@@ -210,12 +218,12 @@ float myTimer(int timerNo, long time) {
     if (time == (long) - 1) {
         timerArray[timerNo] = 0;
         tempTime[timerNo] = 0;
-        Serial.println("Reset Timer " + String(timerNo) + " to time = " + String(time) + " Result in timerArray[timerNo] = " + String(timerArray[timerNo]));
+//        Serial.println("Reset Timer " + String(timerNo) + " to time = " + String(time) + " Result in timerArray[timerNo] = " + String(timerArray[timerNo]));
     }
     if (time > (long) 0) {
         timerArray[timerNo] = tmpMillis + time;
         tempTime[timerNo] = time;
-        Serial.println("Init Timer " + String(timerNo) + " to " + String(time) + " Result in timerArray[timerNo] = " + String(timerArray[timerNo]));
+//        Serial.println("Init Timer " + String(timerNo) + " to " + String(time) + " Result in timerArray[timerNo] = " + String(timerArray[timerNo]));
     }
     if (tempTime[timerNo] <= 0)
         return 0.0;
@@ -230,3 +238,11 @@ float myTimer(int timerNo, long time) {
     } else
         return progress;
 }
+
+void buzzHigh(){
+  digitalWrite(buzzer,HIGH);
+  delay(15);//wartet 1ms
+  digitalWrite(buzzer,LOW);
+  delay(50);//wartet 1ms
+}
+
