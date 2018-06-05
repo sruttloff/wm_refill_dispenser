@@ -3,7 +3,7 @@
 #define DISTANCE_PLUGIN_PIN 28
 #define DISTANCE_MEASUREME_EACH 1
 #define REFILL_PUMP 5
-#define NEXTRUN_AFTER_CONTAINER_OUT 10
+#define NEXTRUN_AFTER_CONTAINER_OUT 300
 #define NEXTRUN_AFTER_ERROR 1
 #define NEXTRUN_IF_NOT_CONNECTED 1
 void refillPump();
@@ -14,29 +14,25 @@ uint32_t distanceNextRun = 0;
 #define dist_min 232 // reservoir empty
 #define fillStart 90 // start fill
 #define fillEnd 75 // fill stop
-#define fillTime (5*60)*1000 // time in seconds to fill water // 3minutes - ~250ml
+#define fillTime (3*60)*1000 // time in seconds to fill water // 3minutes - ~250ml
 int fillPump = 0; // status of fill pump
 int fillBreak = 0; // break after fill for x seconds
 String distanceLatestMsg = "";
-const String fillFrom = "10:30:01";
-const String fillTo = "20:43:00";
+const String fillFrom = "09:00:01";
+const String fillTo = "19:33:00";
 uint32_t distanceFunctionNextRun = 0;
 
 
 void distanceRo() {   
   int distance;
-  if (!fillPump){
-    DateTime now = rtc.now();
-    uint32_t tmpTime = ((uint32_t) now.hour() * 3600) + ((uint32_t) now.minute() * 60) + (uint32_t) now.second();  
-    if (!tmpTime || tmpTime > 86400) 
-      return;
-    if (distanceFunctionNextRun < tmpTime){
-      distanceFunctionNextRun = tmpTime + 5; // measure each 5 seconds
+  if (!fillPump){           
+    if (distanceFunctionNextRun < currentUnixtime){
+      distanceFunctionNextRun = currentUnixtime + 5; // measure each 5 seconds
     } else
       return;
-    if (tmpTime < timeStampFromTime(fillFrom) || tmpTime > timeStampFromTime(fillTo)) {   
-      Serial.println("Refill Ausserhalb der Zeit " + String(now.hour()) + ":" + String(now.minute()) + ":" + String(now.second()));    
-      distanceFunctionNextRun = tmpTime + (5*60); // come back after 5 minutes
+    if (currentTimeStamp < timeStampFromTime(fillFrom) || currentTimeStamp > timeStampFromTime(fillTo)) {   
+      Serial.println("Refill Ausserhalb der Zeit " + String(currentDateTime.hour()) + ":" + String(currentDateTime.minute()) + ":" + String(currentDateTime.second()));    
+      distanceFunctionNextRun = currentUnixtime + (5*60); // come back after 5 minutes
       return;
     }
   }
@@ -50,7 +46,7 @@ void distanceRo() {
     myTimer(2, -1); // reset pump Timer
     Serial.println("Refill timer out of time");    
     fillBreak = 1;   
-    myTimer(2, (long) fillTime);
+    myTimer(2, (long) fillTime * 2);
     tmpT = 0;
   }
   if (fillBreak && tmpT >= 100.00){
@@ -67,7 +63,7 @@ void distanceRo() {
       Serial.println(distanceLatestMsg);   
     }
     // retry in 7 secs
-    distanceNextRun = getTimeStamp() + (NEXTRUN_IF_NOT_CONNECTED);
+    distanceNextRun = currentUnixtime + (NEXTRUN_IF_NOT_CONNECTED);
     distanceMeasureTry = 0;
     fillPump = 0;
     refillPump();
@@ -82,7 +78,7 @@ void distanceRo() {
       Serial.println(distanceLatestMsg + " " + String(distance) + "mm");   
     }
     buzzHigh();    
-    distanceNextRun = getTimeStamp() + (NEXTRUN_AFTER_ERROR);
+    distanceNextRun = currentUnixtime + (NEXTRUN_AFTER_ERROR);
     distanceMeasureTry = 0;
     buzzHigh();
     fillPump = 0;
@@ -116,7 +112,7 @@ void distanceRo() {
     }
     fillPump = 0;
     refillPump();    
-    distanceNextRun = getTimeStamp() + (NEXTRUN_AFTER_CONTAINER_OUT);
+    distanceNextRun = currentUnixtime + (NEXTRUN_AFTER_CONTAINER_OUT);
     return;
   }
   
@@ -174,7 +170,7 @@ void distanceRoSetup() {
   digitalWrite(TRIG_PIN, LOW);
   pinMode(ECHO_PIN, INPUT);    
   pinMode(DISTANCE_PLUGIN_PIN, INPUT);    
-  distanceNextRun = getTimeStamp() + DISTANCE_MEASUREME_EACH;
+  distanceNextRun = currentUnixtime + DISTANCE_MEASUREME_EACH;
 }
 void refillPump(){
   digitalWrite(REFILL_PUMP, fillPump);

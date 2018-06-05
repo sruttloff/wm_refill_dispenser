@@ -10,11 +10,11 @@
 #include <Arduino.h>
 extern HardwareSerial Serial;
 
-const int pump1 = 3; // the PWM pin the right pump is attached to
-const int pump2 = 4; // the PWM pin the left pump is attached to
-const int pump1Min = 45; //45 ist der kleinste
-const int pump1Max = 235;
-const int pump2Min = 45;
+const int pump1 = 2; // the PWM pin the right pump is attached to
+const int pump2 = 3; // the PWM pin the left pump is attached to
+const int pump1Min = 0; //45 ist der kleinste
+const int pump1Max = 255;
+const int pump2Min = 0;
 const int pump2Max = 255;
 int pump1Current = 0, pump2Current = 0;
 const int t1 = 30; // time in secs. to stay at level min
@@ -25,6 +25,8 @@ const int t4 = 15; // time in secs. to go from max to min
 /*
  * timer 1 = for wavemaker timing
  * timer 2 = fill pump RO water
+ * timer 3 = rtc read
+ * timer 4 = dropper timer
  * timer 5 = food timer
  */
 const int timerElements = 5; // qty of timer's to init
@@ -56,9 +58,11 @@ void setup() {
     pinMode(foodSwitch, INPUT);
     digitalWrite(foodSwitch, HIGH);
     setPump1Speed(50.0);
-    delay(500);
+    delay(100);
     distanceRoSetup();
     pinMode(buzzer,OUTPUT);// initialsiert den buzzer als Output
+    readTimeFromRTC();
+    dropperSetup();
 }
 
 void foodSwitchAction() {
@@ -103,10 +107,12 @@ void foodSwitchAction() {
 }
 
 void loop() {
+    readTimeFromRTC();
     if (!foodBreak)
         pumpMaster();
     foodSwitchAction();
     distanceRo();
+    dropper();
     //testTime();
     //test();   
 }
@@ -221,22 +227,27 @@ float myTimer(int timerNo, long time) {
 //        Serial.println("Reset Timer " + String(timerNo) + " to time = " + String(time) + " Result in timerArray[timerNo] = " + String(timerArray[timerNo]));
     }
     if (time > (long) 0) {
+        // 250+10=5;
         timerArray[timerNo] = tmpMillis + time;
         tempTime[timerNo] = time;
 //        Serial.println("Init Timer " + String(timerNo) + " to " + String(time) + " Result in timerArray[timerNo] = " + String(timerArray[timerNo]));
     }
-    if (tempTime[timerNo] <= 0)
-        return 0.0;
-
+    if (tempTime[timerNo] <= 0){
+//      if (timerNo == 1)
+//        Serial.println("timerNo.: " + String(timerNo) + "  tempTime[timerNo]=" + String(tempTime[timerNo]));
+      return 0.0;
+    }
+    // 5-251=1;5-252=2;5-253=3;5-4=1
     unsigned long diff = (timerArray[timerNo] - tmpMillis);
     //   Serial.println("diff " + String(diff) + " = " + "(" + String(timerArray[timerNo]) + " - " + String(tmpMillis) + ")");
+    // 100/5*1=20;100/5*2=40;100/5*3=60;100/5*1=20
     float progress = float(100) - ((float) 100 / (float) tempTime[timerNo] * (float) diff);
     //Serial.println("Progress " + String(progress) + "%");
     if (timerArray[timerNo] > 0 && timerArray[timerNo] <= tmpMillis) {
         //Serial.println("Timer " + String(timerNo) + " is run out because: " + String(timerArray[timerNo]) + " <= " + String(tmpMillis));        
         return 100.00;
     } else
-        return progress;
+        return progress == 0.0 ? 0.01 : progress;
 }
 
 void buzzHigh(){
