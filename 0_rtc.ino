@@ -6,11 +6,11 @@ RTC_DS3231 rtc;
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 uint32_t getTimeStamp();
 uint32_t Hour, Minute, Second ;
-uint32_t timeStampFromTime(String str);
+//uint32_t timeStampFromTime(String str);
 String timeFromTimeStamp (uint32_t timestamp);
 DateTime currentDateTime;
-uint32_t currentTimeStamp;
-uint32_t currentUnixtime;
+//uint32_t currentTimeStamp;
+//uint32_t currentUnixtime;
 
 void rtcSetup () {  
   if (! rtc.begin()) {

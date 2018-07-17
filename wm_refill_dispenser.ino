@@ -12,16 +12,19 @@ extern HardwareSerial Serial;
 
 const int pump1 = 2; // the PWM pin the right pump is attached to
 const int pump2 = 3; // the PWM pin the left pump is attached to
-const int pump1Min = 0; //45 ist der kleinste
+const int pump1Min = 45; //45 ist der kleinste
 const int pump1Max = 255;
-const int pump2Min = 0;
+const int pump2Min = 45;
 const int pump2Max = 255;
 int pump1Current = 0, pump2Current = 0;
-const int t1 = 30; // time in secs. to stay at level min
-const int t2 = 30; // time in secs. to stay at max
-const int t3 = 15; // time in secs. to go from min to max
-const int t4 = 15; // time in secs. to go from max to min
-
+const int t1 = 1; // time in secs. to stay at level min
+const int t2 = 1; // time in secs. to stay at max
+const int t3 = 35; // time in secs. to go from min to max
+const int t4 = 35; // time in secs. to go from max to min
+const int relaxPump1 = 180;
+const int relaxPump2 = 180;
+int pump1MaxTmp = 0;
+int pump2MaxTmp = 0;
 /*
  * timer 1 = for wavemaker timing
  * timer 2 = fill pump RO water
@@ -38,7 +41,9 @@ void setPump1Speed(float rate);
 void setPump2Speed(float rate);
 void pumpMaster();
 void buzzHigh();
-int foodBreak = 0;
+int pumpClean = 0;
+unsigned long pumpCleanTimer = 0;
+bool foodBreak = 0;
 long foodTime = 600; // food time in secs.
 const int foodSwitch = 22; // food switch pin
 int tmpSwitch = 0;
@@ -46,10 +51,12 @@ float tmpFood = 0;
 const int buzzer = 30;//der Pins des angesteckten Summers
 
 void setup() {    
+    pump1MaxTmp = pump1Max;
+    pump2MaxTmp = pump2Max;
     rtcSetup();
     pinMode(pump1, pump1Current);
     pinMode(pump2, pump2Current);
-    Serial.begin(9600);
+    Serial.begin(115200);
     // init timer array  
     for (int i = 0; i < timerElements; i++) {
         timerArray[i] = 0;
@@ -58,13 +65,75 @@ void setup() {
     pinMode(foodSwitch, INPUT);
     digitalWrite(foodSwitch, HIGH);
     setPump1Speed(50.0);
-    delay(100);
+    wifiSetup();
     distanceRoSetup();
     pinMode(buzzer,OUTPUT);// initialsiert den buzzer als Output
     readTimeFromRTC();
     dropperSetup();
+    temperatureSetup();
 }
-
+void foodbreakToggle(){
+  if (foodBreak == 1) {
+      // make timer run out of time      
+      myTimer(5, (long) 1);
+  } else {
+      if (pumpClean)
+        return;
+      foodBreak = 1;
+      analogWrite(pump1, 0);
+      analogWrite(pump2, 0);
+      // start food timer      
+      myTimer(5, (long) foodTime * (long) 1000);
+      Serial.println("Web-Trigger Pressed and released " + String((long) foodTime * (long) 1000));
+      pump1Current = 0;
+      pump2Current = 0;
+  }
+}
+void pumpCleaningToggle(){
+  if (foodBreak)
+    return;
+  if (pumpClean) {
+      pumpClean = 0;
+      step = "t1";      
+      myTimer(1, -1); // reset pump Timer
+      setPump1Speed(50.0);
+      delay(700);
+      Serial.println("Cleaning end");
+  } else {
+      pumpClean = 1;
+      analogWrite(pump1, 255);
+      analogWrite(pump2, 0);
+      pump1Current = 255;
+      pump2Current = 0;     
+      pumpCleanTimer = millis() + 1000;       
+  }
+}
+void pumpCleaningAction(){
+  if (!pumpClean)
+    return;
+    if (pumpCleanTimer > millis())
+      return;
+    pumpClean++;
+    if (pumpClean == 100){
+      pumpCleaningToggle();
+      return;
+    }
+    Serial.print("Zyklus " +  String(pumpClean) + ": ");
+    if (pump1Current){
+      analogWrite(pump1, 0);
+      analogWrite(pump2, 255);
+      pump1Current = 0;
+      pump2Current = 255;     
+      Serial.println("Cleaning Pump 2");
+    } else {
+      analogWrite(pump1, 255);
+      analogWrite(pump2, 0);
+      pump1Current = 255;
+      pump2Current = 0;     
+      Serial.println("Cleaning Pump 1");
+    }    
+    pumpCleanTimer = millis() + (750 - (long) (3 * pumpClean));      
+}
 void foodSwitchAction() {
     int digitalVal = digitalRead(foodSwitch);
     // switch pressed
@@ -81,10 +150,9 @@ void foodSwitchAction() {
             foodBreak = 1;
             analogWrite(pump1, 0);
             analogWrite(pump2, 0);
-            // start food timer
-            foodTime = (long) foodTime * (long) 1000;
-            Serial.println("Switch Pressed and released " + String(foodTime));
-            myTimer(5, (long) foodTime);
+            // start food timer            
+            Serial.println("Switch Pressed and released " + String((long) foodTime * (long) 1000));
+            myTimer(5, (long) foodTime * (long) 1000);
         }
     }
     if (foodBreak == 1) {
@@ -95,7 +163,7 @@ void foodSwitchAction() {
         }
         // timer reached      
         if (tmp >= 100.00) {
-            foodBreak = pump1Current = pump2Current = 0;
+            tmpFood = foodBreak = pump1Current = pump2Current = 0;
             step = "t1";
             myTimer(5, -1); // reset Timer
             myTimer(1, -1); // reset pump Timer
@@ -108,17 +176,20 @@ void foodSwitchAction() {
 
 void loop() {
     readTimeFromRTC();
-    if (!foodBreak)
+    if (!foodBreak && !pumpClean)
         pumpMaster();
     foodSwitchAction();
+    pumpCleaningAction();
     distanceRo();
     dropper();
+    temperatureCheck();
+    processWifi();
     //testTime();
     //test();   
 }
 void setPump1Speed(float rate) {
     // rate is percent
-    int tmpRange = pump1Max - pump1Min;
+    int tmpRange = pump1MaxTmp - pump1Min;
     if (rate < 0.00)
         rate = 0.00;
     if (rate > 100.00)
@@ -136,7 +207,7 @@ void setPump1Speed(float rate) {
 
 void setPump2Speed(float rate) {
     // rate is percent
-    int tmpRange = pump2Max - pump2Min;
+    int tmpRange = pump2MaxTmp - pump2Min;
     if (rate < 0.00)
         rate = 0.00;
     if (rate > 100.00)
@@ -150,13 +221,49 @@ void setPump2Speed(float rate) {
         analogWrite(pump2, pump2Current);
     }
 }
-
+uint32_t currentTimeStamp;
+uint32_t currentUnixtime;
+uint32_t timeStampFromTime(String str);
+uint32_t pumpShuffleNextRun = 0;
+bool pumpShuffle = 0;
+bool pumpRelaxMode = 0;
+const String relaxFrom = "22:00:00";
+const String relaxTo = "9:00:00";
 void pumpMaster() {
+  if (currentTimeStamp > timeStampFromTime(relaxFrom) || currentTimeStamp < timeStampFromTime(relaxTo)) {   
+    if (pump1MaxTmp != relaxPump1)
+      Serial.println("Pumpen Relax-Zeit ein");    
+    pump1MaxTmp = relaxPump1;
+    pump2MaxTmp = relaxPump2;
+    pumpRelaxMode = 1;
+  }
+  else
+  {
+    pumpRelaxMode = 0;
+    if (!pumpShuffle && pump1MaxTmp != pump1Max)
+      Serial.println("Pumpen Relax-Zeit aus");    
+    if (pumpShuffleNextRun < currentUnixtime){      
+      if (pumpShuffle){
+        pumpShuffle = 0;
+        pump1MaxTmp = pump1Max;
+        pump2MaxTmp = pump2Max;
+        Serial.println("Pumpen Zufall aus");  
+        pumpShuffleNextRun = currentUnixtime + 60; // each X seconds  
+      } else {
+        pumpShuffle = 1;
+        // set a speed between relax and max
+        pump1MaxTmp = random(relaxPump1, pump1Max);
+        pump2MaxTmp = random(relaxPump2, pump2Max);;
+        Serial.println("Pumpen Zufall ein: Pumpe 1(" + String(pump1MaxTmp) + ") Pumpe 2(" + String(pump2MaxTmp) + ")" );    
+        pumpShuffleNextRun = currentUnixtime + 120; // each X seconds
+      }
+    } 
+  }
     // go to min
     if (step == "t4") {
         if (myTimer(1) == 0.0) {
             Serial.println("Power Head: Decrease to min");
-            myTimer(1, t4 * 1000);
+            myTimer(1, t4 * 1000L);
         }
         // set pump speed            
         float tmp = myTimer(1);
@@ -172,8 +279,8 @@ void pumpMaster() {
     // go to max
     if (step == "t3") {
         if (myTimer(1) == 0.0) {
-            Serial.println("Power Head: Grow to max");
-            myTimer(1, t3 * 1000);
+            Serial.println("Power Head: Init Grow to max");
+            myTimer(1, t3 * 1000L);
         }
         // set pump speed
         float speed = myTimer(1);
@@ -230,7 +337,7 @@ float myTimer(int timerNo, long time) {
         // 250+10=5;
         timerArray[timerNo] = tmpMillis + time;
         tempTime[timerNo] = time;
-//        Serial.println("Init Timer " + String(timerNo) + " to " + String(time) + " Result in timerArray[timerNo] = " + String(timerArray[timerNo]));
+        // Serial.println("Init Timer " + String(timerNo) + " to " + String(time) + " Result in timerArray[timerNo] = " + String(timerArray[timerNo]));
     }
     if (tempTime[timerNo] <= 0){
 //      if (timerNo == 1)

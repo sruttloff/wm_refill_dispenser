@@ -27,7 +27,7 @@ void distanceRo() {
   int distance;
   if (!fillPump){           
     if (distanceFunctionNextRun < currentUnixtime){
-      distanceFunctionNextRun = currentUnixtime + 5; // measure each 5 seconds
+      distanceFunctionNextRun = currentUnixtime + 10; // measure each 10 seconds
     } else
       return;
     if (currentTimeStamp < timeStampFromTime(fillFrom) || currentTimeStamp > timeStampFromTime(fillTo)) {   
